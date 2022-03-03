@@ -1,0 +1,561 @@
+---
+title: "Norad_Behaviour"
+author: "Charlie Wilson"
+date: "March 2022"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+---
+
+Starting Norad behaviour analysis from scratchfor Yuri in March 2021
+Script adapted from the Domenech analysis scripts
+
+Data are loaded from pre-prepared data files, see the silenced chunks for loading of new data or parameters. 
+
+
+```{r echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
+
+#Setup and packages
+
+#Additional packages:
+library(ggplot2) 
+library(ggpubr)
+library(tidyr) 
+#library(plyr) 
+library(dplyr) 
+library(lubridate) 
+library(svDialogs)
+library(RcppRoll)
+
+```
+
+
+```{r echo = FALSE, results = 'hide'}
+
+##### USEFUL FUNCTIONS ######
+
+# summarySE Function for plot DFs
+
+
+## Summarizes data.
+## Gives count, mean, standard deviation, standard error of the mean, and confidence 
+## interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=TRUE, conf.interval=.95) {
+    library(doBy)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=TRUE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # Collapse the data
+    formula <- as.formula(paste(measurevar, paste(groupvars, collapse=" + "), sep=" ~ "))
+    datac <- summaryBy(formula, data=data, FUN=c(length2,mean,sd), na.rm=na.rm)
+
+    # Rename columns
+    names(datac)[ names(datac) == paste(measurevar, ".mean",    sep="") ] <- measurevar
+    names(datac)[ names(datac) == paste(measurevar, ".sd",      sep="") ] <- "sd"
+    names(datac)[ names(datac) == paste(measurevar, ".length2", sep="") ] <- "N"
+    
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+    
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval: 
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+    
+    return(datac)
+}
+
+
+```
+
+
+
+```{r echo = FALSE, eval = FALSE, results = 'hide'}
+
+# Setup and count and order data
+# Then extract it if needed
+# Skip to next chunk if already saved
+
+#monkey <- dlgInput("Enter monkey", Sys.info()["user"])$res
+# Where are the data?
+# 3 folders
+# Done longhand in previous versions
+
+paths <- ("/Users/charliewilson/Dropbox/Brain Lyon/NORAD/ANALYSES/SESSIONS/YURI/80_20C/"); 
+
+Monkey <- c("Yuri")
+Dat <- data.frame(); #Initialise big data frame
+All_dates <- data.frame(); #Initialise big data frame
+
+for(m in Monkey){
+
+    #List and organise the data
+    Session.list <- dir(paths, pattern = "*.txt"); #List the files in the date
+    Dates <- data.frame(Session.list); #Extract dates from filenames
+    colnames(Dates) <- c("fid"); #rename File ID column
+    Dates <- Dates %>% separate(fid, c("Monkey","_","Task","_2","Time","Date","Ext"),sep=cumsum(c(4,1,11,1,6,11,4))); #Split the filename into separate sections
+    Dates$Date <- dmy(Dates$Date); #Put Date column into date format
+    Dates$fid <- Session.list; 
+    Dates <- arrange(Dates, Date); #Put Dates into date order
+    
+    Nsession <- length(Dates$Date); # How many sessions?
+
+    #CREW TO HERE 030322
+    
+    Data <- data.frame(); #Initialise big data frame
+    
+    
+    if(Nsession >0){ #Sanity check
+  
+          for(isession in 1:Nsession){ #Loop on each session  
+            
+            fid <- Dates$fid[isession]; #Extract filename from Dates
+            print(fid) #Show filename
+            event.raw <- read.csv(file=paste(paths,p,"/",m,"/",fid, sep= ""),sep= "", dec =",",  header = FALSE, fill=TRUE, colClasses=c(NA, NA,"NULL")); #Load data from .txt file using space as separator
+            colnames(event.raw) <- c("time","event"); #Name columns
+            event.raw$session <- isession; #Record session number
+            
+            # Now some basic analysis
+            event.raw$trial <- cumsum(event.raw$event == 100); #Trial number
+            
+            # Which stimulus was used in the trial
+            event.raw <- event.raw %>%
+              group_by(trial) %>%   #Apply this trial by trial (rather than line by line)
+              dplyr:: mutate(Stim = nth(event,4)) %>%  #In every trial take teh nth entry in the Event column
+              ungroup();  #Put it back with the new column
+            
+            # Which TS
+            event.raw <- event.raw %>%
+              group_by(trial) %>%
+              dplyr:: mutate(TS = nth(event,2)) %>%
+              ungroup();
+            
+            # This is the end of intiial analysis of a single day
+            
+            #Put this session (event.raw) into Data which will contain all of the sessions
+            Data <- rbind(Data,event.raw);
+            
+            
+           rm(event.raw)
+              
+          }
+    }
+    
+    #And save this section
+    save(file = paste(paths,p,"/Data_Domenech_",p,"_",m,".Rdata",sep = ""),Data, Dates) # Save monkey specific data frame
+
+    # Concatenation across monkeys and stages
+    Data <- Data %>%
+      mutate(monkey = m, Phase = p)
+    Dat <- rbind (Dat, Data)
+    
+    Dates <- Dates %>%
+      mutate(monkey = m, Phase = p)
+    All_dates <- rbind (All_dates, Dates)
+    
+    rm ('Data', 'Dates', 'Session.list','isession')
+  
+}
+    
+#Save
+save(file = paste(paths,"/All_Data_ST123.Rdata",sep = ""),Dat, All_dates) # Save monkey specific data frame
+
+
+``` 
+
+First load the major datafile
+
+```{r echo = FALSE, results = 'hide'}
+
+# Where are the data?
+paths <- ("/Users/charliewilson/Dropbox/Brain Lyon/Reversible Cognition/Domenech_Analysis/Behaviour/"); 
+
+load(file = paste(paths,"/All_Data_ST123.Rdata",sep = "")) 
+
+```
+
+What is in each session?
+ 
+  
+```{r echo = FALSE}
+
+
+#Count trial types and outcomes
+Sess.data <- Dat %>%
+        group_by(monkey, Phase, session) %>%   #Apply this session by session   #was group_by(session, monkey)
+        filter(event==152) %>%   #Noisy good answer
+        count(event)  #Count the instances
+Sess.data2 <- Dat %>%
+        group_by(monkey, Phase, session) %>%   #Apply this session by session
+        filter(event==153) %>%   #Noisy bad answer
+        count(event)  #Count the instances
+Sess.data3 <- Dat %>%
+        group_by(monkey, Phase, session) %>%   #Apply this session by session
+        filter(event==65) %>%   #Rewards
+        count(event)  #Count the instances
+
+# Combine the DFs and make sure it is done on the basis of "session" and "monkey" and "phase"
+# Note that this removes completely any sessions where there is a zero count of one of the items
+# Current case session 91 for P is removed...
+Sess.dat <- merge(Sess.data, Sess.data2, by=c("session","monkey","Phase")) %>%
+              merge(Sess.data3, by=c("session","monkey","Phase")) 
+
+colnames(Sess.dat) <- c("session","monkey","Phase","xx","Noiseg","yy","Noiseb","zz","Rew"); #Rename columns
+Sess.dat <- subset(Sess.dat, select= -c(xx,yy,zz)); #remove superfluous columns
+remove(Sess.data, Sess.data2,Sess.data3); #remove superfluous DFs
+
+Sess.dat <- pivot_longer(Sess.dat, -c(session, monkey, Phase), values_to = "Count", names_to = "Outcome") #Make long for plotting
+
+ggplot(Sess.dat, aes(x=session, y=Count, color=Outcome)) + #What data to plot
+    geom_point(aes(shape = monkey, color = Outcome))  + #Add a specific plot and colour it
+    facet_grid(monkey ~ Phase)
+
+
+Sess.dat <- Sess.dat[ which(Sess.dat$Outcome!='Rew'), ]
+
+ggplot(Sess.dat, aes(x=session, y=Count, color=Outcome)) + #What data to plot
+    geom_point(aes(shape = monkey, color = Outcome, alpha=0.3))  + #Add a specific plot and colour it
+    geom_smooth() +
+    facet_grid(monkey ~ Phase)
+    
+
+```
+
+Let's build a trial by trial matrix to help the trial analysis, and populate it with the necessary information on each trial and TS
+
+```{r echo = FALSE}
+
+# First some summary statistics from the whole trial
+Dat <- Dat %>%
+  dplyr::group_by(monkey,Phase,session,trial) %>%
+  dplyr::mutate(GNorm = sum(event == 150), BNorm = sum(event == 151),GTrap = sum(event == 152), BTrap = sum(event == 153), Rew = sum(event == 65)) %>%
+  dplyr::ungroup() 
+
+
+# And use that to extract if the response was correct or not
+Dat <- Dat %>%
+  dplyr::group_by(monkey,Phase,session,trial) %>%
+  dplyr::mutate(COR = max(GNorm | GTrap), INC = max(BNorm | BTrap)) %>%
+  dplyr::ungroup() 
+
+# Extract response
+Dat <- Dat %>%
+  dplyr::group_by(monkey,Phase,session,trial) %>%
+  dplyr::mutate(Resp = 
+                  case_when(
+                    sum(event == 61)>0 ~ 1,
+                    sum(event == 62)>0 ~ 2,
+                    sum(event == 63)>0 ~ 3)) %>%
+  dplyr::ungroup() 
+
+# Now extract the first line of each trial
+#rm ('Trials')
+Trials <- Dat %>%
+  dplyr::group_by(monkey,Phase,session,trial) %>%
+  slice(1)
+Trials <- subset(Trials, COR>0 | INC>0) # Just trials with an outcome
+
+# Extract the previous trial info for Stim and Rew
+Trials <- Trials %>%
+  dplyr::group_by(monkey,Phase,session) %>%
+  dplyr::mutate(PrevSt=lag(Stim), PrevOut=lag(COR) ) %>%
+  dplyr::ungroup() 
+
+# How many rewards in the last 3 trials?
+Trials <- Trials %>%
+  dplyr::group_by(monkey,Phase,session) %>%
+  dplyr::mutate(roll_sum = roll_sum(Rew, 4, align = "right", fill = NA)) %>%
+  dplyr::ungroup() 
+   
+# We want a new DF with the outcomes around each trap
+TrapI <- which(Trials$GTrap == 1 | Trials$BTrap == 1)
+
+# Count trials since and to the Gtraps
+# First track cycles of GTraps
+Trials <- Trials %>%
+  dplyr:: group_by(monkey,Phase,session) %>% 
+  dplyr:: mutate(GTrapCyc = cumsum(GTrap)) %>%
+  dplyr:: ungroup() 
+
+# Then count forward and backward
+Trials <- Trials %>%
+  dplyr::group_by(monkey,Phase,session,GTrapCyc) %>% 
+  dplyr::mutate(GTrapC = row_number()-1,GTrapCback = row_number() - (n()+1))
+
+# Subset down to trials just around Traps and set t around Traps
+#rm ('Traps', 'TrapSE')
+Traps <- subset(Trials, GTrapC <=2 | GTrapCback == -1)
+# The trial BEFORE each trap belongs to the GTrapCyc of the trap that comes just after for this analysis...
+Traps$GTrapCyc <- lead(Traps$GTrapCyc) #Shift up 1
+Traps$t <-Traps$GTrapC
+Traps$t[Traps$t>2] <- -1
+
+# Is the response the same as the Trap?
+Traps <- Traps %>%
+  group_by(monkey,Phase,session,GTrapCyc) %>% 
+  dplyr::mutate(TrapR = nth(Resp,2), SameRT = as.integer(TrapR==Resp)) 
+
+# Is the stimulus the same as the Trap?
+Traps <- Traps %>%
+  group_by(monkey,Phase,session,GTrapCyc) %>% 
+  dplyr::mutate(TrapS = nth(Stim,2), SameST = as.integer(TrapS==Stim))
+
+TrapSSame <- subset(Traps, SameST == 1)
+TrapSDif <- subset(Traps, SameST == 0)
+```
+
+Use this to produce a monkey version of the figures from PD's AI manuscript
+
+```{r echo = FALSE, warning = FALSE}
+
+#Test <- table(TrapSSame$SameRT)
+
+# summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+# We need the summary for the different t values -1 to 2
+# But for t=2 only we need to split on the basis of PrevOut 
+# The following is an ugly way of achieving this...
+SS1 <- summarySE(TrapSSame, measurevar="SameRT", groupvars=c("t","PrevOut","monkey","Phase"))
+SS1 <- subset(SS1, t==2 & !is.na(PrevOut),select=-PrevOut)
+SS2 <- summarySE(TrapSSame, measurevar="SameRT", groupvars=c("t","monkey","Phase"))
+SS2 <- subset(SS2, t<2 & t!=0)
+SumSame <- rbind(SS2,SS1)
+
+# Also for the Different stimulus...
+SD1 <- summarySE(TrapSDif, measurevar="SameRT", groupvars=c("t","PrevOut","monkey","Phase"))
+SD1 <- subset(SD1, t==2 & !is.na(PrevOut),select=-PrevOut)
+SD2 <- summarySE(TrapSDif, measurevar="SameRT", groupvars=c("t","monkey","Phase"))
+SD2 <- subset(SD2, t<2)
+SumDif <- rbind(SD2,SD1)
+
+# Reproduce figs 2a,b from the Domenech Manuscript
+xxx <- c("t1-","t1-","t1+","t1+")
+
+ggplot(SumSame, aes(x=t,y=SameRT)) + #What data to plot
+    geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
+    geom_text(aes(label=ifelse(t>1,xxx,'')),hjust=2,vjust=-1) +
+    geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
+    ylim(0,1) +
+    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+    geom_rect(aes(xmin=-0.1, xmax=0.1, ymin=0, ymax=1), color="grey", alpha=0.1) +
+    ggtitle("Same Stimulus as 'Negative' Trap on t0") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    ylab("Proportion repetition same respons as 'Neg' Trap") +
+    xlab("Trials since 'Neg' Trap") +
+    facet_grid(monkey ~ Phase) + 
+    theme_bw()
+   
+ggplot(SumDif, aes(x=t,y=SameRT)) + #What data to plot
+    geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
+    geom_text(aes(label=ifelse(t>1,xxx,'')),hjust=2,vjust=-1) +
+    geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
+    ylim(0,1) +
+    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+    geom_rect(aes(xmin=-0.1, xmax=0.1, ymin=0, ymax=1), color="grey", alpha=0.1) +
+    ggtitle("Different Stimulus from 'Negative' Trap on t0") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    ylab("Proportion repetition same respons as 'Neg' Trap") +
+    xlab("Trials since 'Neg' Trap") +
+    facet_grid(monkey ~ Phase)+ 
+    theme_bw()
+  
+
+# Reproduce figs 2c,d from the Domenech Manuscript
+
+# Summarise rolling sum of same resp
+Sumt1same <- summarySE(subset(TrapSSame,t==1), measurevar="SameRT", groupvars=c("roll_sum","monkey","Phase"))
+Sumt1dif <- summarySE(subset(TrapSDif,t==1), measurevar="SameRT", groupvars=c("roll_sum","monkey","Phase"))
+
+ggplot(Sumt1same, aes(x=roll_sum,y=SameRT)) + #What data to plot
+  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
+  geom_line(aes(colour=monkey))+
+  geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
+    ylim(0,1) +
+    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+    ggtitle("Same Stimulus as 'Negative' Trap on t0") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    ylab("Proportion repetition same response on t1 as 'Neg' Trap") +
+    xlab("# Rewards in 3 trials before 'Neg' Trap") +
+    facet_grid(monkey ~ Phase)+ 
+    theme_bw()
+
+ggplot(Sumt1dif, aes(x=roll_sum,y=SameRT)) + #What data to plot
+  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
+  geom_line(aes(colour=monkey)) +
+  geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
+    ylim(0,1) +
+    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+    ggtitle("Different Stimulus from 'Negative' Trap on t0") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    ylab("Proportion repetition same response on t1 as 'Neg' Trap") +
+    xlab("# Rewards in 3 trials before 'Neg' Trap") +
+    facet_grid(monkey ~ Phase)+ 
+    theme_bw()
+```
+
+
+Performance of the 2 monkeys across the 3 stages of this task is fairly similar and strong. 
+The monkeys look very much like the "good learner" humans in the PD manuscript, without the AI lesion
+There is possibly a reduction in the trap reactivity across phases, so will study this below. 
+
+So how does the monkeys' within-TS learning change across the stages?    
+
+
+```{r warning = FALSE,echo = FALSE }
+
+# Counter in each TS
+Trials <- Trials %>%
+  group_by(monkey,Phase,session, TS) %>% 
+  dplyr::mutate(TScount = row_number(), TSperc = mean(COR))
+#Summarise % correct
+TSsum <- summarySE(Trials, measurevar="COR", groupvars=c("TScount","monkey","Phase"))
+#Plot % correct through TS
+ggplot(TSsum, aes(x=TScount, y=COR)) +
+  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
+  geom_line(aes(colour=monkey)) +
+  geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
+  geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+  xlim(0,50) +
+  facet_grid(monkey ~ Phase)+ 
+  theme_bw()
+
+#How well are the TSs solved? Is there a pattern over time?
+TSs <- Trials %>%
+  dplyr::group_by(monkey,Phase,session, TS) %>%
+  slice(1)
+  
+  ggplot(TSs, aes(x=TSperc, fill = monkey)) +
+  geom_histogram(position="dodge")+
+  facet_grid(monkey ~ Phase)+ 
+  theme_bw()
+
+#Over time
+TSs <- TSs %>%
+    dplyr::group_by(monkey,Phase) %>%
+    dplyr::mutate(TSf = as.factor(row_number()))
+
+ggplot(TSs, aes(x=TSf, y=TSperc)) +
+  geom_point(aes(colour=monkey), size=1)+
+  facet_grid(monkey ~ Phase)+ 
+  theme_bw()
+
+
+#Look at only the good TSs
+GoodTS <- subset(Trials, TSperc>0.75)
+GoodTSsum <- summarySE(GoodTS, measurevar="COR", groupvars=c("TScount","monkey","Phase"))
+ggplot(GoodTSsum, aes(x=TScount, y=COR)) +
+  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
+  geom_line(aes(colour=monkey)) +
+  geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
+  geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+  xlim(0,50) +
+  facet_grid(monkey ~ Phase)+ 
+  theme_bw()
+
+#Look at only the bad TSs
+BadTS <- subset(Trials, TSperc<0.75)
+BadTSsum <- summarySE(BadTS, measurevar="COR", groupvars=c("TScount","monkey","Phase"))
+ggplot(BadTSsum, aes(x=TScount, y=COR)) +
+  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
+  geom_line(aes(colour=monkey)) +
+  geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
+  geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+  xlim(0,50) +
+  facet_grid(monkey ~ Phase)+ 
+  theme_bw()
+
+```
+
+The comparison here is tricky as there is a criterion in ST1 but not afterwards. 
+Maybe learning is initially faster in later STs? But overall there is a wider spread and more bad TSs in the later STs
+
+
+Now we want to reproduce some of the figures from Faraut et al 2016, but for the current dataset
+
+```{r warning = FALSE,echo = FALSE}
+
+#Let's look at trap reactivity as %COR (Fig 4A Faraut)
+
+#Need to consider both Trap types, so need a Trap count that does that
+
+# Count trials since and to the Gtraps
+
+Trials <- Trials %>%
+  group_by(monkey, Phase) %>% 
+  mutate (Traps = cumsum(GTrap+BTrap))
+#max(Trials$Traps)
+#sum(Trials$GTrap + Trials$BTrap)
+
+Trials <- Trials %>%
+  group_by(monkey, Phase, Traps) %>% 
+  dplyr::mutate(TrapC = row_number()-1,TrapCback = row_number() - (n()+1))
+
+# Subset down to trials just around Traps and set t around Traps
+#rm ('Traps', 'TrapSE')
+AllTraps <- subset(Trials, TrapC <=4 | TrapCback >= -4)
+AllTraps <- transform(AllTraps, tt = ifelse(TrapC>4,TrapCback,TrapC))
+
+TrapReac <- summarySE(AllTraps, measurevar="COR", groupvars=c("tt","monkey","Phase"))
+
+ggplot(TrapReac, aes(x=tt,y=COR)) + #What data to plot
+    geom_point(aes(color=monkey),size=3,alpha=0.5)+
+    geom_line(aes(color=monkey)) +
+    geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
+    ylim(0.3,0.7) +
+    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
+    geom_rect(aes(xmin=-0.1, xmax=0.1, ymin=0.3, ymax=0.7), color="grey", alpha=0.01) +
+    ggtitle("Trap Reactivity") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    ylab("% Correct") +
+    xlab("Trials around Trap")+
+    facet_grid(monkey ~ Phase)+ 
+    theme_bw()
+
+```
+
+So in the early version the Trap reactivity is greater than it is more recently, but there are pre-trap differences between the monkeys so interpretation is hard. 
+To be discussed....
+
+So can we track a trap reactivity measure across the stages?
+
+
+```{r warning = FALSE,echo = FALSE}
+
+#Trials 0 and 1
+
+TrapRe <- subset(AllTraps, tt==0 | tt==1)
+TrapReS <- TrapRe %>%
+  dplyr::group_by(monkey,Phase,session,tt) %>% #Group on tt to separate the outcomes
+  dplyr::summarise(Cor=mean(COR)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(diff=Cor-lag(Cor,default=first(Cor))) # This calculates the trap reactivity
+TrapReS <- subset(TrapReS, tt==1) #Fudge to only have the reactivity as 0 -> 1
+TrapReS$diff <- TrapReS$diff * -1 # Trap reactivity as +ve value
+
+ggplot(TrapReS, aes(x=session,y=diff)) + #What data to plot
+    geom_point(aes(color=monkey),size=1,alpha=0.5)+
+    geom_smooth(aes(color=monkey)) +
+    ggtitle("Trap Reactivity Change over time") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    ylab("Trap reactivity") +
+    xlab("Session")+
+    facet_grid(monkey ~ Phase)+ 
+    theme_bw()
+
+```
+
+The evidence for a diminishing trap reactivity over time is present but weak...
+
+So what else can we add to this?
+ 
