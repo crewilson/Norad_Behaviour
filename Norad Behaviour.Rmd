@@ -93,8 +93,8 @@ summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=TRUE, conf.in
 # 3 folders
 # Done longhand in previous versions
 
-paths <- ("/Users/charliewilson/Dropbox/Brain Lyon/NORAD/ANALYSES/SESSIONS/YURI/80_20C/"); 
-
+path <- ("/Users/charliewilson/Dropbox/Brain Lyon/NORAD/Norad_Behaviour/YURI_80_20/"); 
+savepath <- ("/Users/charliewilson/Dropbox/Brain Lyon/NORAD/Norad_Behaviour/"); 
 Monkey <- c("Yuri")
 Dat <- data.frame(); #Initialise big data frame
 All_dates <- data.frame(); #Initialise big data frame
@@ -102,44 +102,42 @@ All_dates <- data.frame(); #Initialise big data frame
 for(m in Monkey){
 
     #List and organise the data
-    Session.list <- dir(paths, pattern = "*.txt"); #List the files in the date
+    Session.list <- dir(path, pattern = "*.txt"); #List the files in the date
+    Session.list <- dir(path); #List the files in the date
     Dates <- data.frame(Session.list); #Extract dates from filenames
-    colnames(Dates) <- c("fid"); #rename File ID column
-    Dates <- Dates %>% separate(fid, c("Monkey","_","Task","_2","Time","Date","Ext"),sep=cumsum(c(4,1,11,1,6,11,4))); #Split the filename into separate sections
+    colnames(Dates) <- c("folder"); #rename File ID column
+    Dates <- Dates %>% separate(folder, c("Monkey","_","Task","_2","Time","_3","Date"),sep=cumsum(c(4,1,11,1,5,1,11))); #Split the filename into separate sections
     Dates$Date <- dmy(Dates$Date); #Put Date column into date format
-    Dates$fid <- Session.list; 
+    Dates$fold <- Session.list; 
     Dates <- arrange(Dates, Date); #Put Dates into date order
     
     Nsession <- length(Dates$Date); # How many sessions?
-
-    #CREW TO HERE 030322
-    
     Data <- data.frame(); #Initialise big data frame
-    
-    
+
     if(Nsession >0){ #Sanity check
   
           for(isession in 1:Nsession){ #Loop on each session  
             
-            fid <- Dates$fid[isession]; #Extract filename from Dates
+            fid <- Dates$fold[isession]; #Extract filename from Dates
             print(fid) #Show filename
-            event.raw <- read.csv(file=paste(paths,p,"/",m,"/",fid, sep= ""),sep= "", dec =",",  header = FALSE, fill=TRUE, colClasses=c(NA, NA,"NULL")); #Load data from .txt file using space as separator
+            event.raw <- read.csv(file=paste(path,fid,"/BaseReport.csv", sep= ""),sep= "", dec =",",  header = FALSE, skip =3, fill=TRUE); #Load data from .txt file using space as separator
             colnames(event.raw) <- c("time","event"); #Name columns
             event.raw$session <- isession; #Record session number
             
             # Now some basic analysis
             event.raw$trial <- cumsum(event.raw$event == 100); #Trial number
+            event.raw$block <- cumsum(event.raw$event == 8); #Block number
             
-            # Which stimulus was used in the trial
+            # Which stimulus was optimal in the block
             event.raw <- event.raw %>%
               group_by(trial) %>%   #Apply this trial by trial (rather than line by line)
-              dplyr:: mutate(Stim = nth(event,4)) %>%  #In every trial take teh nth entry in the Event column
+              dplyr:: mutate(Stim = nth(event,2)) %>%  #In every trial take teh nth entry in the Event column
               ungroup();  #Put it back with the new column
             
-            # Which TS
+            # Which stim is rewarded 
             event.raw <- event.raw %>%
               group_by(trial) %>%
-              dplyr:: mutate(TS = nth(event,2)) %>%
+              dplyr:: mutate(L = nth(event,3), M = nth(event,4), R = nth(event,5)) %>%
               ungroup();
             
             # This is the end of intiial analysis of a single day
@@ -154,15 +152,15 @@ for(m in Monkey){
     }
     
     #And save this section
-    save(file = paste(paths,p,"/Data_Domenech_",p,"_",m,".Rdata",sep = ""),Data, Dates) # Save monkey specific data frame
+    save(file = paste(savepath,Monkey,"_",Dates$Task[1],"_","Behav.Rdata",sep = ""),Data, Dates) # Save monkey specific data frame
 
     # Concatenation across monkeys and stages
     Data <- Data %>%
-      mutate(monkey = m, Phase = p)
+      mutate(monkey = Monkey)
     Dat <- rbind (Dat, Data)
-    
+
     Dates <- Dates %>%
-      mutate(monkey = m, Phase = p)
+      mutate(monkey = Monkey)
     All_dates <- rbind (All_dates, Dates)
     
     rm ('Data', 'Dates', 'Session.list','isession')
@@ -170,7 +168,7 @@ for(m in Monkey){
 }
     
 #Save
-save(file = paste(paths,"/All_Data_ST123.Rdata",sep = ""),Dat, All_dates) # Save monkey specific data frame
+save(file = paste(savepath,"/All_Data_PST_NORAD.Rdata",sep = ""),Dat, All_dates) # Save monkey specific data frame
 
 
 ``` 
@@ -180,9 +178,9 @@ First load the major datafile
 ```{r echo = FALSE, results = 'hide'}
 
 # Where are the data?
-paths <- ("/Users/charliewilson/Dropbox/Brain Lyon/Reversible Cognition/Domenech_Analysis/Behaviour/"); 
+savepath <- ("/Users/charliewilson/Dropbox/Brain Lyon/NORAD/Norad_Behaviour/"); 
 
-load(file = paste(paths,"/All_Data_ST123.Rdata",sep = "")) 
+load(file = paste(savepath,"All_Data_PST_NORAD.Rdata",sep = "")) 
 
 ```
 
@@ -193,42 +191,37 @@ What is in each session?
 
 
 #Count trial types and outcomes
+# For multiple monkeys and/or phase versions, need to reinstate group_by(monkey, Phase, session) %>%
 Sess.data <- Dat %>%
-        group_by(monkey, Phase, session) %>%   #Apply this session by session   #was group_by(session, monkey)
-        filter(event==152) %>%   #Noisy good answer
+        group_by(monkey, session) %>%   #Apply this session by session   #was group_by(session, monkey)
+        filter(event==65) %>%   #Rewards
         count(event)  #Count the instances
 Sess.data2 <- Dat %>%
-        group_by(monkey, Phase, session) %>%   #Apply this session by session
-        filter(event==153) %>%   #Noisy bad answer
-        count(event)  #Count the instances
-Sess.data3 <- Dat %>%
-        group_by(monkey, Phase, session) %>%   #Apply this session by session
-        filter(event==65) %>%   #Rewards
+        group_by(monkey, session) %>%   #Apply this session by session
+        filter(event==66) %>%   #No Reward
         count(event)  #Count the instances
 
 # Combine the DFs and make sure it is done on the basis of "session" and "monkey" and "phase"
 # Note that this removes completely any sessions where there is a zero count of one of the items
-# Current case session 91 for P is removed...
-Sess.dat <- merge(Sess.data, Sess.data2, by=c("session","monkey","Phase")) %>%
-              merge(Sess.data3, by=c("session","monkey","Phase")) 
+Sess.dat <- merge(Sess.data, Sess.data2, by=c("session","monkey")) 
 
-colnames(Sess.dat) <- c("session","monkey","Phase","xx","Noiseg","yy","Noiseb","zz","Rew"); #Rename columns
-Sess.dat <- subset(Sess.dat, select= -c(xx,yy,zz)); #remove superfluous columns
-remove(Sess.data, Sess.data2,Sess.data3); #remove superfluous DFs
+colnames(Sess.dat) <- c("session","monkey","xx","Rew","yy","NR"); #Rename columns
+Sess.dat <- subset(Sess.dat, select= -c(xx,yy)); #remove superfluous columns
+remove(Sess.data, Sess.data2); #remove superfluous DFs
+Sess.dat$Perc <- Sess.dat$Rew/(Sess.dat$Rew+Sess.dat$NR)
 
-Sess.dat <- pivot_longer(Sess.dat, -c(session, monkey, Phase), values_to = "Count", names_to = "Outcome") #Make long for plotting
-
-ggplot(Sess.dat, aes(x=session, y=Count, color=Outcome)) + #What data to plot
-    geom_point(aes(shape = monkey, color = Outcome))  + #Add a specific plot and colour it
-    facet_grid(monkey ~ Phase)
-
-
-Sess.dat <- Sess.dat[ which(Sess.dat$Outcome!='Rew'), ]
+Sess.dat <- pivot_longer(Sess.dat, -c(session, monkey), values_to = "Count", names_to = "Outcome") #Make long for plotting
 
 ggplot(Sess.dat, aes(x=session, y=Count, color=Outcome)) + #What data to plot
+    geom_point(aes(shape = monkey, color = Outcome))  #Add a specific plot and colour it
+    #facet_grid(monkey)
+
+
+
+ggplot(subset(Sess.dat,Outcome=="Perc"), aes(x=session, y=Count)) + #What data to plot
     geom_point(aes(shape = monkey, color = Outcome, alpha=0.3))  + #Add a specific plot and colour it
-    geom_smooth() +
-    facet_grid(monkey ~ Phase)
+    geom_smooth() 
+#    facet_grid(monkey ~ Phase)
     
 
 ```
@@ -239,37 +232,62 @@ Let's build a trial by trial matrix to help the trial analysis, and populate it 
 
 # First some summary statistics from the whole trial
 Dat <- Dat %>%
-  dplyr::group_by(monkey,Phase,session,trial) %>%
-  dplyr::mutate(GNorm = sum(event == 150), BNorm = sum(event == 151),GTrap = sum(event == 152), BTrap = sum(event == 153), Rew = sum(event == 65)) %>%
+  dplyr::group_by(monkey,session,trial) %>%
+  dplyr::mutate(Lt = sum(event == 121), Mt = sum(event == 122),Rt = sum(event == 123), Nt = sum(event == 252), NR = sum(event == 66), Rew = sum(event == 65)) %>% #Touches after lever validated & reward status
   dplyr::ungroup() 
 
 
-# And use that to extract if the response was correct or not
-Dat <- Dat %>%
-  dplyr::group_by(monkey,Phase,session,trial) %>%
-  dplyr::mutate(COR = max(GNorm | GTrap), INC = max(BNorm | BTrap)) %>%
-  dplyr::ungroup() 
+# # And use that to extract if the response was correct or not
+# Dat <- Dat %>%
+#   dplyr::group_by(monkey,session,trial) %>%
+#   dplyr::mutate(COR = max(GNorm | GTrap), INC = max(BNorm | BTrap)) %>%
+#   dplyr::ungroup() 
 
-# Extract response
+# Extract response in the context of the currently optimal choice
 Dat <- Dat %>%
-  dplyr::group_by(monkey,Phase,session,trial) %>%
-  dplyr::mutate(Resp = 
+  dplyr::group_by(monkey,session,trial) %>%
+  dplyr::mutate(COR =
                   case_when(
-                    sum(event == 61)>0 ~ 1,
-                    sum(event == 62)>0 ~ 2,
-                    sum(event == 63)>0 ~ 3)) %>%
-  dplyr::ungroup() 
+                    #Choice is optimal for block
+                    Lt==1 && Stim==51 ~ 1, 
+                    Mt==1 && Stim==52 ~ 1, 
+                    Rt==1 && Stim==53 ~ 1, 
+                    TRUE ~ 0)) %>%
+  dplyr::ungroup()
+
+# Extract trap rewards, when rewarded but not on the currently optimal choice
+Dat <- Dat %>%
+  dplyr::group_by(monkey,session,trial) %>%
+  dplyr::mutate(TRAP =
+                  case_when(
+                    #Rewarded but not COR
+                    Rew==1 && COR==0 ~ 1, 
+                    TRUE ~ 0)) %>%
+  dplyr::ungroup()
 
 # Now extract the first line of each trial
 #rm ('Trials')
 Trials <- Dat %>%
-  dplyr::group_by(monkey,Phase,session,trial) %>%
+  dplyr::group_by(monkey,session,trial) %>%
   slice(1)
-Trials <- subset(Trials, COR>0 | INC>0) # Just trials with an outcome
+Trials <- subset(Trials, event==100) # Remove trial 0 from each session
+# For now keeping in the trials with no response. May need to subset them out later...
+
+#To here CREW 040322
+# Analyses to add
+# p(Rew) in block
+# Number of resp shifts in block
+# (need to pull out incomplete trials for this)
+# Shifts after COR and ERR
+# Overall stats response location %Opt, #rewards, types of bad touch etc
+
+
+
+
 
 # Extract the previous trial info for Stim and Rew
 Trials <- Trials %>%
-  dplyr::group_by(monkey,Phase,session) %>%
+  dplyr::group_by(monkey,session) %>%
   dplyr::mutate(PrevSt=lag(Stim), PrevOut=lag(COR) ) %>%
   dplyr::ungroup() 
 
