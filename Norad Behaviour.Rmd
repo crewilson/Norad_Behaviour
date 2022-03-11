@@ -306,36 +306,20 @@ Trials <- Trials %>%
   dplyr::mutate(bTrial = row_number(),bRew = cumsum(Rew)) %>%
   dplyr::ungroup() 
 
-# Reward in block
-ggplot(Trials, aes(x=bTrial,y=bRew)) + 
-    geom_smooth(aes(colour=monkey), size=3,alpha = 0.5)+
-    #geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
-    ggtitle("Rewards in block") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("Rewards") +
-    xlab("Trials in block")  
-    theme_bw()
-
-# Shift in block
-ggplot(Trials, aes(x=bTrial,y=Shift)) + #What data to plot
-    geom_smooth(aes(colour=monkey), size=3,alpha = 0.5)+
-    #geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
-    ggtitle("Shifts in block") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("Shifts") +
-    xlab("Trials in block")  
-    theme_bw()
     
 # %C and % R in block
 S1 <- summarySE(Trials, measurevar="COR", groupvars=c("bTrial"))
 S2 <- summarySE(Trials, measurevar="Rew", groupvars=c("bTrial"))
+S3 <- summarySE(Trials, measurevar="Shift", groupvars=c("bTrial"))
 ggplot(S1, aes(x=bTrial,y=COR)) + #What data to plot
     geom_line(size=3,alpha = 0.5, colour="blue")+ 
     geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
     geom_line(data=S2, aes(x=bTrial,y=Rew), size=3,alpha = 0.5, colour="green")+ 
     geom_errorbar(data=S2, aes(x=bTrial,y=Rew, ymin=Rew-se, ymax=Rew+se), width=.1) +
+    geom_line(data=S3, aes(x=bTrial,y=Shift), size=3,alpha = 0.5, colour="red")+ 
+    geom_errorbar(data=S3, aes(x=bTrial,y=Shift, ymin=Shift-se, ymax=Shift+se), width=.1) +
     theme_bw() +
-    ggtitle("Rewards and optimal choices within block") +
+    ggtitle("Rewards, optimal choices, and shifts within block") +
     theme(plot.title = element_text(hjust = 0.5)) +
     ylab("Proportion") +
     xlab("Trials in block")  
@@ -343,11 +327,14 @@ ggplot(S1, aes(x=bTrial,y=COR)) + #What data to plot
 # %C and % R across blocks within session
 SS1 <- summarySE(Trials, measurevar="COR", groupvars=c("block"))
 SS2 <- summarySE(Trials, measurevar="Rew", groupvars=c("block"))
+SS3 <- summarySE(Trials, measurevar="Shift", groupvars=c("block"))
 ggplot(SS1, aes(x=block,y=COR)) + #What data to plot
     geom_line(size=3,alpha = 0.5, colour="blue")+ 
     geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
     geom_line(data=SS2, aes(x=block,y=Rew), size=3,alpha = 0.5, colour="green")+ 
     geom_errorbar(data=SS2, aes(x=block,y=Rew, ymin=Rew-se, ymax=Rew+se), width=.1) +
+    geom_line(data=SS3, aes(x=block,y=Shift), size=3,alpha = 0.5, colour="red")+ 
+    geom_errorbar(data=SS3, aes(x=block,y=Shift, ymin=Shift-se, ymax=Shift+se), width=.1) +
     theme_bw() +
     ggtitle("Rewards and optimal choices across blocks / within session") +
     theme(plot.title = element_text(hjust = 0.5)) +
