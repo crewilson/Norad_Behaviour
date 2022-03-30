@@ -10,10 +10,10 @@ editor_options:
   chunk_output_type: inline
 ---
 
-Starting Norad behaviour analysis from scratchfor Yuri in March 2021
-Script adapted from the Domenech analysis scripts
+Starting Norad behaviour analysis from scratch for Yuri in March 2021
+CREW script adapted from the Domenech analysis scripts
 
-Data are loaded from pre-prepared data files, see the silenced chunks for loading of new data or parameters. 
+Data are loaded from a pre-prepared concatenated data file, see the silenced chunks for loading of new data or parameters. 
 
 
 ```{r echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
@@ -184,49 +184,68 @@ load(file = paste(savepath,"All_Data_PST_NORAD.Rdata",sep = ""))
 
 ```
 
-What is in each session?
+
+
+
+First, let's track basic behaviour across sessions?
  
   
-```{r echo = FALSE}
+  
+  
+```{r echo = FALSE, warning = FALSE, message = FALSE}
 
 
 #Count trial types and outcomes
 # For multiple monkeys and/or phase versions, need to reinstate group_by(monkey, Phase, session) %>%
-Sess.data <- Dat %>%
-        group_by(monkey, session) %>%   #Apply this session by session   #was group_by(session, monkey)
-        filter(event==65) %>%   #Rewards
-        count(event)  #Count the instances
-Sess.data2 <- Dat %>%
-        group_by(monkey, session) %>%   #Apply this session by session
-        filter(event==66) %>%   #No Reward
-        count(event)  #Count the instances
-
-# Combine the DFs and make sure it is done on the basis of "session" and "monkey" and "phase"
 # Note that this removes completely any sessions where there is a zero count of one of the items
-Sess.dat <- merge(Sess.data, Sess.data2, by=c("session","monkey")) 
 
-colnames(Sess.dat) <- c("session","monkey","xx","Rew","yy","NR"); #Rename columns
-Sess.dat <- subset(Sess.dat, select= -c(xx,yy)); #remove superfluous columns
-remove(Sess.data, Sess.data2); #remove superfluous DFs
-Sess.dat$Perc <- Sess.dat$Rew/(Sess.dat$Rew+Sess.dat$NR)
+Sess.data <- Dat %>% group_by(monkey, session,event) %>% tally()
+Sess.data2 <- subset(Sess.data,(event %in% c(100, 65)))
+Sess.data2 <- Sess.data2 %>% pivot_wider(names_from = event, values_from = n) #Longer to do maths
+Sess.data2$Proportion <- Sess.data2$`65` / Sess.data2$`100` 
+#Sess.data <- Sess.data %>% pivot_wider(names_from = event, values_from = n) #Longer might be easier for some stuff
 
-Sess.dat <- pivot_longer(Sess.dat, -c(session, monkey), values_to = "Count", names_to = "Outcome") #Make long for plotting
-
-ggplot(Sess.dat, aes(x=session, y=Count, color=Outcome)) + #What data to plot
-    geom_point(aes(shape = monkey, color = Outcome))  #Add a specific plot and colour it
+ggplot(Sess.data2,aes(x=session, y=Proportion) ) + #What data to plot
+    geom_smooth(method = 'loess', span = 0.3, color = "green", size = 3) + #Add a specific plot and colour it
+    geom_point(color = "blue") + #
+    ggtitle("Proporton correct trials over sessions") +
+    theme_bw()
     #facet_grid(monkey)
 
-ggplot(subset(Sess.dat,Outcome=="Perc"), aes(x=session, y=Count)) + #What data to plot
-    geom_point(aes(shape = monkey, color = Outcome))  + #Add a specific plot and colour it
-    geom_smooth() 
-#    facet_grid(monkey ~ Phase)
-    
+Sess.data$Code <- as.factor(Sess.data$event)
+ggplot(subset(Sess.data,(event %in% c(100, 65, 66))),aes(x=session, y=n) ) + #What data to plot
+    geom_line(aes(color = Code)) + #Add a specific plot and colour it
+    ggtitle("Trials, rewards and nonrewards over sessions") +
+    theme_bw()
+    #facet_grid(monkey)
+
+ggplot(subset(Sess.data,(event %in% c(121, 122, 123))),aes(x=session, y=n) ) + #What data to plot
+    geom_line(aes(color = Code)) + #Add a specific plot and colour it
+    ggtitle("Good touches to the 3 stimuli over sessions") +
+    theme_bw()
+    #facet_grid(monkey)    
+
+ggplot(subset(Sess.data,(event %in% c(111, 112, 113))),aes(x=session, y=n) ) + #What data to plot
+    geom_line(aes(color = Code)) + #Add a specific plot and colour it
+    ggtitle("Pre-emptive touches to the 3 stimuli over sessions") +
+    theme_bw()
+    #facet_grid(monkey)    
+
+
+
 
 ```
 
-Let's build a trial by trial matrix to help the trial analysis, and populate it with the necessary information on each trial and TS
 
-```{r echo = FALSE}
+
+
+This script now builds a trial by trial matrix to help the trial analysis, and populates it with the necessary information on each trial and block
+This allows us to summarise what the monkey(s) are doing within and across blocks.
+
+
+
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
 
 # First some summary statistics from the whole trial
 Dat <- Dat %>%
@@ -275,7 +294,10 @@ Trials <- Dat %>%
 Trials <- subset(Trials, event==100) # Remove trial 0 from each 
 
 # Before we remove the trials with no response, let's plot trial outcome overall
-ggplot(Trials, aes(x=Ch)) + geom_histogram(binwidth=1)
+ggplot(Trials, aes(x=Ch)) + geom_histogram(binwidth = 1, stat="count") +
+  ggtitle("Overall distribution of choices") +
+  xlab("Choice made (0=no choice)") +
+  theme_bw()
 
 # Remove trials with no response...
 # Allows us to track active choices
@@ -378,11 +400,8 @@ names(T2)[names(T2) == 'Mt'] <- 'Val'
 T3 <- summarySE(Trials, measurevar="Rt", groupvars=c("bTrial"))
 T3$var <-"Rt"
 names(T3)[names(T3) == 'Rt'] <- 'Val'
-T4 <- summarySE(Trials, measurevar="Nt", groupvars=c("bTrial"))
-T4$var <-"Nt"
-names(T4)[names(T4) == 'Nt'] <- 'Val'
-T <- rbind(T1, T2, T3, T4)
-rm("T1", "T2", "T3", "T4")
+T <- rbind(T1, T2, T3)
+rm("T1", "T2", "T3")
 
 ggplot(T, aes(x=bTrial,y=Val,colour=var)) + #What data to plot
     geom_line(size=3,alpha = 0.5)+ 
@@ -405,11 +424,8 @@ names(TT2)[names(TT2) == 'Mt'] <- 'Val'
 TT3 <- summarySE(Trials, measurevar="Rt", groupvars=c("block"))
 TT3$var <-"Rt"
 names(TT3)[names(TT3) == 'Rt'] <- 'Val'
-TT4 <- summarySE(Trials, measurevar="Nt", groupvars=c("block"))
-TT4$var <-"Nt"
-names(TT4)[names(TT4) == 'Nt'] <- 'Val'
-TT <- rbind(TT1, TT2, TT3, TT4)
-rm("TT1", "TT2", "TT3", "TT4")
+TT <- rbind(TT1, TT2, TT3)
+rm("TT1", "TT2", "TT3")
 
 ggplot(TT, aes(x=block,y=Val,colour=var)) + #What data to plot
     geom_line(size=3,alpha = 0.5)+ 
@@ -440,275 +456,60 @@ ggplot(T, aes(x=bTrial,y=Val,colour=var)) + #What data to plot
     geom_line(size=3,alpha = 0.5)+ 
     geom_errorbar(aes(ymin=Val-se, ymax=Val+se), width=.1) +
     geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-    ggtitle("Rewardeds touch proportion within block") +
+    ggtitle("Rewarded touch proportion within block") +
     theme(plot.title = element_text(hjust = 0.5)) +
     ylab("Proportion") +
     xlab("Trials in block") +
     theme_bw() +
     ylim(0,0.5)
 
+```
+
+
+
+Under what circumstances do monkeys shift choice?
+
+
+
+
+```{r echo = FALSE}
+
 # Reward status when shifting
-Trials$ShiftF <- as.factor(Trials$Shift)
-    ggplot(Trials, aes(x=ShiftF, y=roll_sum)) + geom_boxplot() +
-    ggtitle("Reward status when shifting") +
+
+Sh <- summarySE(Trials, measurevar="roll_sum", groupvars=c("Shift"))
+Sh$ShiftF <- as.factor(Sh$Shift)
+levels(Sh$ShiftF) <- c("Stay", "Shift")
+
+    ggplot(Sh, aes(x=ShiftF,y=roll_sum, group=1)) + 
+    geom_errorbar(width=.1, aes(ymin=roll_sum-ci, ymax=roll_sum+ci)) +
+    geom_point(shape=21, size=3, fill="red") +
+    ylim(0,5) +
+    ggtitle("How rewarded has the monkey been when he shifts?") +
     ylab("Rewards in previous 5 trials") +
     xlab("Shift (1) or Stay") +
     theme_bw() 
+    #ggplot(subset(Trials,!(is.na(Trials$roll_sum))), aes(x=ShiftF, y=roll_sum, fill=ShiftF)) + geom_boxplot() +
 
-    # Previous trial when shifting
-    ggplot(Trials, aes(x=ShiftF, y=PrevRew)) + geom_boxplot() +
-    ggtitle("Reward status when shifting") +
-    ylab("Previously rewarded?") +
-    xlab("Shift (1) or Stay") +
+# Previous trial when shifting
+
+    Sh1 <- summarySE(Trials, measurevar="Shift", groupvars=c("PrevRew"))
+    ggplot(subset(Sh1,PrevRew>=0), aes(x=as.factor(PrevRew),y=Shift, group=1)) + 
+    geom_errorbar(width=.1, aes(ymin=Shift-ci, ymax=Shift+ci)) +
+    geom_point(shape=21, size=3, fill="green") +
+    ylim(0,0.5) +
+    ggtitle("Probability of shifting given previous reward") +
+    ylab("Probability of shifting") +
+    xlab("Previous trial rewarded?") +
     theme_bw() 
     
-#To here CREW 080322
-# Shifts after COR and ERR
-# Check the TRAP variable
-# A count for that previous graph...
-    
 ```
 
-Use this to produce a monkey version of the figures from PD's AI manuscript
+In sum (300322)
 
-```{r echo = FALSE, warning = FALSE}
-
-#Test <- table(TrapSSame$SameRT)
-
-# summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
-# We need the summary for the different t values -1 to 2
-# But for t=2 only we need to split on the basis of PrevOut 
-# The following is an ugly way of achieving this...
-SS1 <- summarySE(TrapSSame, measurevar="SameRT", groupvars=c("t","PrevOut","monkey","Phase"))
-SS1 <- subset(SS1, t==2 & !is.na(PrevOut),select=-PrevOut)
-SS2 <- summarySE(TrapSSame, measurevar="SameRT", groupvars=c("t","monkey","Phase"))
-SS2 <- subset(SS2, t<2 & t!=0)
-SumSame <- rbind(SS2,SS1)
-
-# Also for the Different stimulus...
-SD1 <- summarySE(TrapSDif, measurevar="SameRT", groupvars=c("t","PrevOut","monkey","Phase"))
-SD1 <- subset(SD1, t==2 & !is.na(PrevOut),select=-PrevOut)
-SD2 <- summarySE(TrapSDif, measurevar="SameRT", groupvars=c("t","monkey","Phase"))
-SD2 <- subset(SD2, t<2)
-SumDif <- rbind(SD2,SD1)
-
-# Reproduce figs 2a,b from the Domenech Manuscript
-xxx <- c("t1-","t1-","t1+","t1+")
-
-ggplot(SumSame, aes(x=t,y=SameRT)) + #What data to plot
-    geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
-    geom_text(aes(label=ifelse(t>1,xxx,'')),hjust=2,vjust=-1) +
-    geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
-    ylim(0,1) +
-    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-    geom_rect(aes(xmin=-0.1, xmax=0.1, ymin=0, ymax=1), color="grey", alpha=0.1) +
-    ggtitle("Same Stimulus as 'Negative' Trap on t0") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("Proportion repetition same respons as 'Neg' Trap") +
-    xlab("Trials since 'Neg' Trap") +
-    facet_grid(monkey ~ Phase) + 
-    theme_bw()
-   
-ggplot(SumDif, aes(x=t,y=SameRT)) + #What data to plot
-    geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
-    geom_text(aes(label=ifelse(t>1,xxx,'')),hjust=2,vjust=-1) +
-    geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
-    ylim(0,1) +
-    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-    geom_rect(aes(xmin=-0.1, xmax=0.1, ymin=0, ymax=1), color="grey", alpha=0.1) +
-    ggtitle("Different Stimulus from 'Negative' Trap on t0") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("Proportion repetition same respons as 'Neg' Trap") +
-    xlab("Trials since 'Neg' Trap") +
-    facet_grid(monkey ~ Phase)+ 
-    theme_bw()
-  
-
-# Reproduce figs 2c,d from the Domenech Manuscript
-
-# Summarise rolling sum of same resp
-Sumt1same <- summarySE(subset(TrapSSame,t==1), measurevar="SameRT", groupvars=c("roll_sum","monkey","Phase"))
-Sumt1dif <- summarySE(subset(TrapSDif,t==1), measurevar="SameRT", groupvars=c("roll_sum","monkey","Phase"))
-
-ggplot(Sumt1same, aes(x=roll_sum,y=SameRT)) + #What data to plot
-  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
-  geom_line(aes(colour=monkey))+
-  geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
-    ylim(0,1) +
-    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-    ggtitle("Same Stimulus as 'Negative' Trap on t0") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("Proportion repetition same response on t1 as 'Neg' Trap") +
-    xlab("# Rewards in 3 trials before 'Neg' Trap") +
-    facet_grid(monkey ~ Phase)+ 
-    theme_bw()
-
-ggplot(Sumt1dif, aes(x=roll_sum,y=SameRT)) + #What data to plot
-  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
-  geom_line(aes(colour=monkey)) +
-  geom_errorbar(aes(ymin=SameRT-se, ymax=SameRT+se), width=.1) +
-    ylim(0,1) +
-    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-    ggtitle("Different Stimulus from 'Negative' Trap on t0") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("Proportion repetition same response on t1 as 'Neg' Trap") +
-    xlab("# Rewards in 3 trials before 'Neg' Trap") +
-    facet_grid(monkey ~ Phase)+ 
-    theme_bw()
-```
-
-
-Performance of the 2 monkeys across the 3 stages of this task is fairly similar and strong. 
-The monkeys look very much like the "good learner" humans in the PD manuscript, without the AI lesion
-There is possibly a reduction in the trap reactivity across phases, so will study this below. 
-
-So how does the monkeys' within-TS learning change across the stages?    
-
-
-```{r warning = FALSE,echo = FALSE }
-
-# Counter in each TS
-Trials <- Trials %>%
-  group_by(monkey,Phase,session, TS) %>% 
-  dplyr::mutate(TScount = row_number(), TSperc = mean(COR))
-#Summarise % correct
-TSsum <- summarySE(Trials, measurevar="COR", groupvars=c("TScount","monkey","Phase"))
-#Plot % correct through TS
-ggplot(TSsum, aes(x=TScount, y=COR)) +
-  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
-  geom_line(aes(colour=monkey)) +
-  geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
-  geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-  xlim(0,50) +
-  facet_grid(monkey ~ Phase)+ 
-  theme_bw()
-
-#How well are the TSs solved? Is there a pattern over time?
-TSs <- Trials %>%
-  dplyr::group_by(monkey,Phase,session, TS) %>%
-  slice(1)
-  
-  ggplot(TSs, aes(x=TSperc, fill = monkey)) +
-  geom_histogram(position="dodge")+
-  facet_grid(monkey ~ Phase)+ 
-  theme_bw()
-
-#Over time
-TSs <- TSs %>%
-    dplyr::group_by(monkey,Phase) %>%
-    dplyr::mutate(TSf = as.factor(row_number()))
-
-ggplot(TSs, aes(x=TSf, y=TSperc)) +
-  geom_point(aes(colour=monkey), size=1)+
-  facet_grid(monkey ~ Phase)+ 
-  theme_bw()
-
-
-#Look at only the good TSs
-GoodTS <- subset(Trials, TSperc>0.75)
-GoodTSsum <- summarySE(GoodTS, measurevar="COR", groupvars=c("TScount","monkey","Phase"))
-ggplot(GoodTSsum, aes(x=TScount, y=COR)) +
-  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
-  geom_line(aes(colour=monkey)) +
-  geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
-  geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-  xlim(0,50) +
-  facet_grid(monkey ~ Phase)+ 
-  theme_bw()
-
-#Look at only the bad TSs
-BadTS <- subset(Trials, TSperc<0.75)
-BadTSsum <- summarySE(BadTS, measurevar="COR", groupvars=c("TScount","monkey","Phase"))
-ggplot(BadTSsum, aes(x=TScount, y=COR)) +
-  geom_point(aes(colour=monkey), size=3,alpha = 0.5)+
-  geom_line(aes(colour=monkey)) +
-  geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
-  geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-  xlim(0,50) +
-  facet_grid(monkey ~ Phase)+ 
-  theme_bw()
-
-```
-
-The comparison here is tricky as there is a criterion in ST1 but not afterwards. 
-Maybe learning is initially faster in later STs? But overall there is a wider spread and more bad TSs in the later STs
-
-
-Now we want to reproduce some of the figures from Faraut et al 2016, but for the current dataset
-
-```{r warning = FALSE,echo = FALSE}
-
-#Let's look at trap reactivity as %COR (Fig 4A Faraut)
-
-#Need to consider both Trap types, so need a Trap count that does that
-
-# Count trials since and to the Gtraps
-
-Trials <- Trials %>%
-  group_by(monkey, Phase) %>% 
-  mutate (Traps = cumsum(GTrap+BTrap))
-#max(Trials$Traps)
-#sum(Trials$GTrap + Trials$BTrap)
-
-Trials <- Trials %>%
-  group_by(monkey, Phase, Traps) %>% 
-  dplyr::mutate(TrapC = row_number()-1,TrapCback = row_number() - (n()+1))
-
-# Subset down to trials just around Traps and set t around Traps
-#rm ('Traps', 'TrapSE')
-AllTraps <- subset(Trials, TrapC <=4 | TrapCback >= -4)
-AllTraps <- transform(AllTraps, tt = ifelse(TrapC>4,TrapCback,TrapC))
-
-TrapReac <- summarySE(AllTraps, measurevar="COR", groupvars=c("tt","monkey","Phase"))
-
-ggplot(TrapReac, aes(x=tt,y=COR)) + #What data to plot
-    geom_point(aes(color=monkey),size=3,alpha=0.5)+
-    geom_line(aes(color=monkey)) +
-    geom_errorbar(aes(ymin=COR-se, ymax=COR+se), width=.1) +
-    ylim(0.3,0.7) +
-    geom_hline(aes(yintercept=0.333), colour="#990000", linetype="dashed") +
-    geom_rect(aes(xmin=-0.1, xmax=0.1, ymin=0.3, ymax=0.7), color="grey", alpha=0.01) +
-    ggtitle("Trap Reactivity") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("% Correct") +
-    xlab("Trials around Trap")+
-    facet_grid(monkey ~ Phase)+ 
-    theme_bw()
-
-```
-
-So in the early version the Trap reactivity is greater than it is more recently, but there are pre-trap differences between the monkeys so interpretation is hard. 
-To be discussed....
-
-So can we track a trap reactivity measure across the stages?
-
-
-```{r warning = FALSE,echo = FALSE}
-
-#Trials 0 and 1
-
-TrapRe <- subset(AllTraps, tt==0 | tt==1)
-TrapReS <- TrapRe %>%
-  dplyr::group_by(monkey,Phase,session,tt) %>% #Group on tt to separate the outcomes
-  dplyr::summarise(Cor=mean(COR)) %>%
-  dplyr::ungroup() %>%
-  dplyr::mutate(diff=Cor-lag(Cor,default=first(Cor))) # This calculates the trap reactivity
-TrapReS <- subset(TrapReS, tt==1) #Fudge to only have the reactivity as 0 -> 1
-TrapReS$diff <- TrapReS$diff * -1 # Trap reactivity as +ve value
-
-ggplot(TrapReS, aes(x=session,y=diff)) + #What data to plot
-    geom_point(aes(color=monkey),size=1,alpha=0.5)+
-    geom_smooth(aes(color=monkey)) +
-    ggtitle("Trap Reactivity Change over time") +
-    theme(plot.title = element_text(hjust = 0.5)) +
-    ylab("Trap reactivity") +
-    xlab("Session")+
-    facet_grid(monkey ~ Phase)+ 
-    theme_bw()
-
-```
-
-The evidence for a diminishing trap reactivity over time is present but weak...
-
-So what else can we add to this?
+- Yuri is rewarded now in about 60% of trials
+- Consistent bais towards the left stimulus in good and bad touches
+- Expected within-block learning
+- Not much TOT in performance
+- Shifts when has been receiving fewer rewards
+- Only really shfits after an incorrect
  
