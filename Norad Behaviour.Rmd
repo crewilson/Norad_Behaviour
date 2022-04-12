@@ -187,7 +187,7 @@ load(file = paste(savepath,"All_Data_PST_NORAD.Rdata",sep = ""))
 
 
 
-First, let's track basic behaviour across sessions?
+First, let's track basic behaviour across sessions
  
   
   
@@ -240,6 +240,8 @@ ggplot(subset(Sess.data,(event %in% c(111, 112, 113))),aes(x=session, y=n) ) + #
 
 
 This script now builds a trial by trial matrix to help the trial analysis, and populates it with the necessary information on each trial and block
+
+
 This allows us to summarise what the monkey(s) are doing within and across blocks.
 
 
@@ -502,6 +504,21 @@ levels(Sh$ShiftF) <- c("Stay", "Shift")
     xlab("Previous trial rewarded?") +
     theme_bw() 
     
+# Relation of "target value" to shifting
+    
+    Sh2 <- summarySE(Trials, measurevar="Shift", groupvars=c("roll_sum"))
+    ggplot(subset(Sh2,roll_sum>=0), aes(x=roll_sum,y=Shift)) + 
+    geom_line(size=2,alpha = 0.5, colour="green")+ 
+    geom_errorbar(aes(ymin=Shift-se, ymax=Shift+se), width=.1) +
+    ggtitle("Probability of shift depending on reward cumulated over 5 previous trials") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    ylab("Shift probability") +
+    xlab("Target value (rewards in 5 trials)") +
+    theme_bw() +
+    ylim(0,1)
+      
+     
+    
 ```
 
 In sum (300322)
@@ -511,5 +528,14 @@ In sum (300322)
 - Expected within-block learning
 - Not much TOT in performance
 - Shifts when has been receiving fewer rewards
-- Only really shfits after an incorrect
+- Only really shifts after an incorrect
+
+
+To do
+- Cluster the blocks in terms of strategy that the animal is using. Maybe use variance of the within block pattern? Poss contributing variables:
+---Pattern of exploration
+---Solidity of exploitation
+---RTs over time?
+---Re-exploration?
+
  
